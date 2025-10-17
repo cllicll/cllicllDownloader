@@ -1,0 +1,191 @@
+#!/usr/bin/env python3
+# cllicllDownloader — En iyi kalite MP4 + MP3 (opsiyonel both, akıllı fallback, macOS-friendly)
+# Çalışır: macOS 10.13+ (Intel/Apple Silicon), Python 3.9+
+import os, sys, argparse, shutil
+from pathlib import Path
+import yt_dlp
+
+APP_NAME = "cllicllDownloader"
+
+# Varsayılan klasörler: her kullanıcıda çalışır
+DEFAULT_MUSIC_DIR = Path.home() / "Music" / "cllicllDownloader" / "Music"
+DEFAULT_VIDEO_DIR = Path.home() / "Movies" / "cllicllDownloader" / "Video"
+
+# Tarayıcı önceliği (macOS): Chrome, Brave, Edge, Vivaldi, Safari
+BROWSER_ORDER = ("chrome", "brave", "edge", "vivaldi", "safari")
+
+def which_or_hint(cmd, pkg_hint=None):
+    p = shutil.which(cmd)
+    if not p:
+        hint = f"'{cmd}' bulunamadı."
+        if pkg_hint:
+            hint += f" Kurulum ipucu: {pkg_hint}"
+        print(f"⚠️  {hint}", file=sys.stderr)
+    return p
+
+def ensure_deps():
+    # ffmpeg şart; AtomicParsley sadece m4a/mp4 thumbnail için gerekebilir ama mp3 için ffmpeg yeter
+    ffmpeg_ok = bool(which_or_hint("ffmpeg", "brew install ffmpeg"))
+    if not ffmpeg_ok:
+        print("❌ ffmpeg olmadan devam edemem.", file=sys.stderr)
+        sys.exit(2)
+    # yt-dlp bu scriptin içinden import edildi; pipx/pip ile kurulu olmalı
+    return True
+
+def guess_installed_browser():
+    # En yaygını bul. Kullanıcı --cookies verirse bundan yararlanırız.
+    for b in BROWSER_ORDER:
+        if b == "safari":
+            # Safari her macOS'ta var; Keychain izinleri gerekir
+            return b
+        # Uygulama var mı hızlı bakış
+        app_map = {
+            "chrome": "/Applications/Google Chrome.app",
+            "brave": "/Applications/Brave Browser.app",
+            "edge": "/Applications/Microsoft Edge.app",
+            "vivaldi": "/Applications/Vivaldi.app",
+        }
+        path = app_map.get(b)
+        if path and Path(path).exists():
+            return b
+    return "safari"
+
+def mac_headers(client="tv"):
+    headers = {"Accept-Language": "tr-TR,tr;q=0.9,en-US;q=0.8,en;q=0.7"}
+    if client == "tv":
+        headers["User-Agent"] = (
+            "Mozilla/5.0 (AppleTV; CPU OS 13_4 like Mac OS X) AppleWebKit/605.1.15 (KHTML, like Gecko)"
+        )
+    else:
+        headers["User-Agent"] = (
+            "Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) "
+            "AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36"
+        )
+    return headers
+
+def build_opts(outdir: Path, client="tv", cookies=False, kind="video", bitrate=320, embed_thumb=True):
+    extractor_args = {"youtube": {"player_client": [client]}}
+    opts = {
+        "outtmpl": str(outdir / "%(title)s.%(ext)s"),
+        "noplaylist": True,
+        "retries": 15,
+        "fragment_retries": 15,
+        "concurrent_fragment_downloads": 8,
+        "http_chunk_size": 10 * 1024 * 1024,  # 10 MB
+        "force_ipv4": True,
+        "geo_bypass": True,
+        "windowsfilenames": (os.name == "nt"),
+        "extractor_args": extractor_args,
+        "http_headers": mac_headers(client),
+        "ignoreerrors": "only_download",  # tek video indirilirken hata toleransı
+        "quiet": False,
+    }
+
+    # Cookies
+    if cookies and client == "web":
+        # Otomatik tarayıcı seçimi (Keychain izin sorar)
+        browser = guess_installed_browser()
+        opts["cookiesfrombrowser"] = (browser,)
+
+    if kind == "audio":
+        # En iyi ses → MP3'e dönüştür + thumbnail embed (ffmpeg ile ID3)
+        pp = [
+            {"key": "FFmpegExtractAudio", "preferredcodec": "mp3", "preferredquality": str(bitrate)},
+            {"key": "FFmpegMetadata"},
+        ]
+        if embed_thumb:
+            pp.append({"key": "EmbedThumbnail"})
+            opts["writethumbnail"] = True
+        opts.update({
+            "format": "bestaudio/best",
+            "postprocessors": pp,
+            "merge_output_format": "mp3",
+            # MP3 kapak için jpeg tercih et
+            "compat_opts": ["prefer_avcodec_encoder"],  # daha tutarlı davranış
+        })
+    else:
+        # En iyi görüntü+ses → MP4 merge; akıllı seçim (mp4 öncelik)
+        opts.update({
+            # 1) ayrı akışlar: video (mp4 veya mov) + beste ses  → 2) tam akış fallback
+            "format": "((bv*[ext=mp4]/bv*+ba[ext=m4a]/bv*+ba)/b[ext=mp4]/b)[protocol^=https]",
+            "merge_output_format": "mp4",
+            "postprocessors": [{"key": "FFmpegMetadata"}],
+            "prefer_free_formats": False,
+        })
+    return opts
+
+def download_with_fallback(url, opts, fallbacks=("22", "18")):
+    # 22 (720p mp4) → 18 (360p mp4) güvenli fallback zinciri
+    try:
+        with yt_dlp.YoutubeDL(opts) as ydl:
+            return ydl.extract_info(url, download=True)
+    except yt_dlp.utils.DownloadError as e:
+        last_err = e
+        for fmt in fallbacks:
+            try:
+                opts2 = dict(opts)
+                opts2["format"] = fmt
+                with yt_dlp.YoutubeDL(opts2) as y2:
+                    return y2.extract_info(url, download=True)
+            except yt_dlp.utils.DownloadError as e2:
+                last_err = e2
+                continue
+        raise last_err
+
+def run_one(url, kind, use_cookies, out_music: Path, out_video: Path, bitrate=320, embed_thumb=True):
+    # 1) WEB (+cookies?) → 2) TV fallback
+    target_dir = out_music if kind == "audio" else out_video
+    target_dir.mkdir(parents=True, exist_ok=True)
+
+    client = "web" if use_cookies else "tv"
+    opts = build_opts(target_dir, client=client, cookies=use_cookies, kind=kind, bitrate=bitrate, embed_thumb=embed_thumb)
+    try:
+        return download_with_fallback(url, opts)
+    except yt_dlp.utils.DownloadError:
+        if client == "web":
+            opts = build_opts(target_dir, client="tv", cookies=False, kind=kind, bitrate=bitrate, embed_thumb=embed_thumb)
+            return download_with_fallback(url, opts)
+        raise
+
+def main():
+    ensure_deps()
+
+    ap = argparse.ArgumentParser(
+        prog=APP_NAME,
+        description="YouTube MP3/Video indirici (en iyi kalite + akıllı fallback, macOS uyumlu)"
+    )
+    ap.add_argument("url", help="YouTube video URL")
+    ap.add_argument("--type", choices=["mp3","video","both"], default="mp3",
+                    help="mp3, video veya both (ikisi). Varsayılan: mp3")
+    ap.add_argument("--cookies", action="store_true",
+                    help="Web client + tarayıcı çerezlerini dene (Chrome/Brave/Edge/Vivaldi/Safari).")
+    ap.add_argument("--bitrate", type=int, default=320, help="MP3 bitrate (kbps). Varsayılan: 320")
+    ap.add_argument("--music-dir", type=Path, default=DEFAULT_MUSIC_DIR, help="MP3 çıktı klasörü")
+    ap.add_argument("--video-dir", type=Path, default=DEFAULT_VIDEO_DIR, help="MP4 çıktı klasörü")
+    ap.add_argument("--no-thumb", action="store_true", help="MP3 kapağı (thumbnail) gömmeyi kapat")
+    args = ap.parse_args()
+
+    print(f"\n🎬 URL: {args.url}\n")
+
+    if args.type in ("video", "both"):
+        print(f"🎥 Video → {args.video_dir}")
+        run_one(args.url, kind="audio" if False else "video",  # netlik için :)
+                use_cookies=args.cookies,
+                out_music=args.music_dir, out_video=args.video_dir,
+                bitrate=args.bitrate, embed_thumb=not args.no_thumb)
+
+    if args.type in ("mp3", "both"):
+        print(f"🎧 MP3 → {args.music_dir}")
+        run_one(args.url, kind="audio",
+                use_cookies=args.cookies,
+                out_music=args.music_dir, out_video=args.video_dir,
+                bitrate=args.bitrate, embed_thumb=not args.no_thumb)
+
+    print("\n✅ İndirme tamamlandı.\n")
+
+if __name__ == "__main__":
+    try:
+        main()
+    except KeyboardInterrupt:
+        print("\n⛔ İptal edildi.", file=sys.stderr)
+        sys.exit(130)
