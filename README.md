@@ -15,7 +15,7 @@ It uses **smart fallback chains** (separate streams → format 22 → format 18)
 - 🎥 **MP4 merge** — best video + best audio via FFmpeg, prefers MP4
 - 🔄 **Smart fallback chain** — `bv*+ba` → `22 (720p)` → `18 (360p)`
 - 🍪 **Cookie support** — Chrome, Brave, Edge, Vivaldi, or Safari (macOS Keychain prompt)
-- 🏠 **Safe default paths** — `~/Music/cllicll/Music` (MP3), `~/Movies/cllicll/Video` (MP4)
+- 🏠 **Safe default paths** — `~/Music/cllicllDownloader/Music` (MP3), `~/Movies/cllicllDownloader/Video` (MP4)
 - 🧰 Robust flags: bitrate, custom output dirs, disable thumbnail embedding, etc.
 - 🧱 Clear error messages and KeyboardInterrupt handling
 
@@ -82,8 +82,8 @@ clliclldownloader "https://www.youtube.com/watch?v=VIDEO_ID" --type mp3 \  --mus
 
 | Type | Path                     |
 | ---- | ------------------------ |
-| MP3  | `~/Music/cllicll/Music`  |
-| MP4  | `~/Movies/cllicll/Video` |
+| MP3  | `~/Music/cllicllDownloader/Music`  |
+| MP4  | `~/Movies/cllicllDownloader/Video` |
 
 ---
 
