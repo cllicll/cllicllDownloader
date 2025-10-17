@@ -16,7 +16,7 @@
 - 🎥 **MP4 birleştirme** — en iyi video + en iyi ses FFmpeg ile, MP4 öncelikli
 - 🔄 **Akıllı fallback zinciri** — `bv*+ba` → `22 (720p)` → `18 (360p)`
 - 🍪 **Çerez desteği** — Chrome, Brave, Edge, Vivaldi veya Safari (macOS Keychain onayı)
-- 🏠 **Güvenli varsayılan yollar** — `~/Music/cllicll/Music` (MP3), `~/Movies/cllicll/Video` (MP4)
+- 🏠 **Güvenli varsayılan yollar** — `~/Music/cllicllDownloader/Music` (MP3), `~/Movies/cllicllDownloader/Video` (MP4)
 - 🧰 Esnek bayraklar: bitrate, özel çıktı klasörleri, thumbnail gömmeyi kapatma vb.
 - 🧱 Net hata mesajları ve Ctrl‑C (KeyboardInterrupt) yakalama
 
@@ -63,10 +63,10 @@ source ~/.zshrc
 ## 🚀 Kullanım
 
 ```bash
-# En iyi MP3 (320 kbps) → ~/Music/cllicll/Music
+# En iyi MP3 (320 kbps) → ~/Music/cllicllDownloader/Music
 clliclldownloader "https://www.youtube.com/watch?v=VIDEO_ID"
 
-# En iyi MP4 → ~/Movies/cllicll/Video
+# En iyi MP4 → ~/Movies/cllicllDownloader/Video
 clliclldownloader "https://www.youtube.com/watch?v=VIDEO_ID" --type video
 
 # MP4 + MP3 aynı anda
@@ -83,8 +83,8 @@ clliclldownloader "https://www.youtube.com/watch?v=VIDEO_ID" --type mp3 \  --mus
 
 | Tür | Yol                      |
 | --- | ------------------------ |
-| MP3 | `~/Music/cllicll/Music`  |
-| MP4 | `~/Movies/cllicll/Video` |
+| MP3 | `~/Music/cllicllDownloader/Music`  |
+| MP4 | `~/Movies/cllicllDownloader/Video` |
 
 ---
 
